@@ -17,17 +17,15 @@ object BuildSettings {
         scalacOptions += "-deprecation",
         fork in test := true,
         libraryDependencies ++= Seq(slf4jSimpleTest, scalatest, jettyServerTest),
-        resolvers := Seq(scalaToolsRepo, jbossRepo,
-                         akkaRepo, sonatypeRepo))
+        resolvers := Seq(jbossRepo, akkaRepo, sonatypeRepo))
 
     val projectSettings = Defaults.defaultSettings ++ globalSettings
 }
 
 object Resolvers {
     val sonatypeRepo = "Sonatype Release" at "http://oss.sonatype.org/content/repositories/releases"
-    val scalaToolsRepo = "Scala Tools" at "http://scala-tools.org/repo-snapshots/"
     val jbossRepo = "JBoss" at "http://repository.jboss.org/nexus/content/groups/public/"
-    val akkaRepo = "Akka" at "http://akka.io/repository/"
+    val akkaRepo = "Akka" at "http://repo.akka.io/repository/"
 }
 
 object Dependencies {
