@@ -8,7 +8,7 @@ object BuildSettings {
 
     val buildOrganization = "com.typesafe"
     val buildVersion = "1.0"
-    val buildScalaVersion = "2.9.0-1"
+    val buildScalaVersion = "2.9.2"
 
     val globalSettings = Seq(
         organization := buildOrganization,
@@ -17,7 +17,7 @@ object BuildSettings {
         scalacOptions += "-deprecation",
         fork in test := true,
         libraryDependencies ++= Seq(slf4jSimpleTest, scalatest, jettyServerTest),
-        resolvers := Seq(jbossRepo, akkaRepo, sonatypeRepo))
+        resolvers := Seq(jbossRepo, typesafeRepo, sonatypeRepo))
 
     val projectSettings = Defaults.defaultSettings ++ globalSettings
 }
@@ -25,7 +25,7 @@ object BuildSettings {
 object Resolvers {
     val sonatypeRepo = "Sonatype Release" at "http://oss.sonatype.org/content/repositories/releases"
     val jbossRepo = "JBoss" at "http://repository.jboss.org/nexus/content/groups/public/"
-    val akkaRepo = "Akka" at "http://repo.akka.io/repository/"
+    val typesafeRepo = "Typesafe" at "http://repo.typesafe.com/typesafe/releases/"
 }
 
 object Dependencies {
@@ -38,15 +38,13 @@ object Dependencies {
     val jettyServlet = "org.eclipse.jetty" % "jetty-servlet" % jettyVersion
     val jettyServerTest = jettyServer % "test"
 
-    val akka = "se.scalablesolutions.akka" % "akka-actor" % "1.2"
-    val akkaHttp = "se.scalablesolutions.akka" % "akka-http" % "1.2"
-    val akkaAmqp = "se.scalablesolutions.akka" % "akka-amqp" % "1.2"
+    val akka = "com.typesafe.akka" % "akka-remote" % "2.0.4"
 
     val asyncHttp = "com.ning" % "async-http-client" % "1.6.5"
 
     val jsoup = "org.jsoup" % "jsoup" % "1.6.1"
 
-    val casbahCore = "com.mongodb.casbah" %% "casbah-core" % "2.1.5-1"
+    val casbahCore = "com.mongodb.casbah" % "casbah-core_2.9.1" % "2.1.5-1"
 }
 
 object WebWordsBuild extends Build {
@@ -67,7 +65,7 @@ object WebWordsBuild extends Build {
                            file("web"),
                            settings = projectSettings ++
                            StartScriptPlugin.startScriptForClassesSettings ++
-                           Seq(libraryDependencies ++= Seq(akkaHttp, jettyServer, jettyServlet, slf4jSimple))) dependsOn(common % "compile->compile;test->test")
+                           Seq(libraryDependencies ++= Seq(/*akkaHttp, */jettyServer, jettyServlet, slf4jSimple))) dependsOn(common % "compile->compile;test->test")
 
     lazy val indexer = Project("webwords-indexer",
                               file("indexer"),
@@ -78,6 +76,6 @@ object WebWordsBuild extends Build {
     lazy val common = Project("webwords-common",
                            file("common"),
                            settings = projectSettings ++
-                           Seq(libraryDependencies ++= Seq(akka, akkaAmqp, asyncHttp, casbahCore)))
+                           Seq(libraryDependencies ++= Seq(akka, asyncHttp, casbahCore)))
 }
 

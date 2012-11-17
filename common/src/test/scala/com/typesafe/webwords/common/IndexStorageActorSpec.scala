@@ -3,7 +3,6 @@ package com.typesafe.webwords.common
 import org.scalatest.matchers._
 import org.scalatest._
 import akka.actor._
-import akka.actor.Actor.actorOf
 import java.net.URL
 
 class IndexStorageActorSpec extends FlatSpec with ShouldMatchers {

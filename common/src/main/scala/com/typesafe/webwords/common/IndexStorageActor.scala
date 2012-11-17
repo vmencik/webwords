@@ -1,8 +1,6 @@
 package com.typesafe.webwords.common
 
 import scala.collection.JavaConverters._
-import akka.actor.{ Index => _, _ }
-import akka.actor.Actor.actorOf
 import java.net.URL
 import com.mongodb.casbah.MongoConnection
 import com.mongodb.casbah.MongoDB
@@ -15,6 +13,9 @@ import java.util.concurrent.TimeUnit
 import org.bson.types.BasicBSONList
 import com.mongodb.casbah.MongoURI
 import com.mongodb.casbah.WriteConcern
+import akka.actor.Actor
+import akka.actor.Props
+import akka.routing.RoundRobinRouter
 
 sealed trait IndexStorageRequest
 case class CacheIndex(url: String, index: Index) extends IndexStorageRequest
@@ -35,9 +36,8 @@ case class CacheSize(size: Long) extends IndexStorageReply
  * We're using a MongoDB "capped collection," see:
  *   http://www.mongodb.org/display/DOCS/Capped+Collections
  */
-class IndexStorageActor(mongoURI: Option[String])
-    extends Actor
-    with IOBoundActorPool {
+class IndexStorageActor(mongoURI: Option[String]) extends Actor {
+    
 
     // MongoCollection is safe to use from multiple threads
     private class Worker(cache: MongoCollection)
@@ -46,13 +46,13 @@ class IndexStorageActor(mongoURI: Option[String])
 
         override def receive = {
             case GetCacheSize =>
-                self reply CacheSize(cache.getCount())
+                sender ! CacheSize(cache.getCount())
 
             case CacheIndex(url, index) =>
                 cache.insert(MongoDBObject("url" -> url,
                     "time" -> System.currentTimeMillis().toDouble,
                     "index" -> indexAsDBObject(index)))
-                self tryReply IndexCached(url)
+                sender ! IndexCached(url)
 
             case FetchCachedIndex(url) =>
                 // "$natural" -> -1 means reverse insertion order
@@ -88,14 +88,12 @@ class IndexStorageActor(mongoURI: Option[String])
                 }
 
                 if (indexes.hasNext) {
-                    self reply CachedIndexFetched(Some(indexes.next()))
+                    sender ! CachedIndexFetched(Some(indexes.next()))
                 } else {
-                    self reply CachedIndexFetched(None)
+                    sender ! CachedIndexFetched(None)
                 }
         }
     }
-
-    override def instance = actorOf(new Worker(cache.get))
 
     override def receive = {
         case DropCache =>
@@ -110,12 +108,13 @@ class IndexStorageActor(mongoURI: Option[String])
             recreateCache()
         case m =>
             // send other messages to the pool
-            _route.apply(m)
+            router forward m
     }
 
     private[this] var connection: Option[MongoConnection] = None
     private[this] var database: Option[MongoDB] = None
     private[this] var cache: Option[MongoCollection] = None
+    private[this] val router = context.actorOf(Props(new Worker(cache.get)).withRouter(RoundRobinRouter()), "router")
 
     private val cacheName = "indexCache"
 

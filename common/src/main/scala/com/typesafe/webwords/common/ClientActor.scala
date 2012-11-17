@@ -1,10 +1,12 @@
 package com.typesafe.webwords.common
 
 import java.net.URL
-
-import akka.actor.{ Index => _, _ }
-import akka.actor.Actor.actorOf
+import akka.actor._
 import akka.dispatch._
+import akka.pattern.ask
+import akka.pattern.pipe
+import akka.util.duration._
+import akka.util.Timeout
 
 sealed trait ClientActorIncoming
 case class GetIndex(url: String, skipCache: Boolean) extends ClientActorIncoming
@@ -21,61 +23,53 @@ case class GotIndex(url: String, index: Option[Index], cacheHit: Boolean) extend
  * this.
  */
 class ClientActor(config: WebWordsConfig) extends Actor {
-    import ClientActor._
+  import ClientActor._
 
-    private val client = actorOf(new WorkQueueClientActor(config.amqpURL))
-    private val cache = actorOf(new IndexStorageActor(config.mongoURL))
+  private val client = context.actorOf(Props[WorkQueueClientActor])
+  private val cache = context.actorOf(Props(new IndexStorageActor(config.mongoURL)))
+  
 
-    override def receive = {
-        case incoming: ClientActorIncoming =>
-            incoming match {
-                case GetIndex(url, skipCache) =>
-
-                    // we look in the cache, if that fails, ask spider to
-                    // spider and then notify us, and then we look in the
-                    // cache again.
-                    def getWithoutCache = {
-                        getFromWorker(client, url) flatMap { _ =>
-                            getFromCacheOrElse(cache, url, cacheHit = false) {
-                                new AlreadyCompletedFuture[GotIndex](Right(GotIndex(url, index = None, cacheHit = false)))
-                            }
-                        }
-                    }
-
-                    val futureGotIndex = if (skipCache)
-                        getWithoutCache
-                    else
-                        getFromCacheOrElse(cache, url, cacheHit = true) { getWithoutCache }
-
-                    self.channel.replyWith(futureGotIndex)
+  override def receive = {
+    case incoming: ClientActorIncoming =>
+      incoming match {
+        case GetIndex(url, skipCache) =>
+          import context.system
+          // we look in the cache, if that fails, ask spider to
+          // spider and then notify us, and then we look in the
+          // cache again.
+          def getWithoutCache = {
+            getFromWorker(client, url) flatMap { _ =>
+              getFromCacheOrElse(cache, url, cacheHit = false)(Promise.successful(GotIndex(url, index = None, cacheHit = false)))
             }
-    }
+          }
 
-    override def preStart = {
-        client.start
-        cache.start
-    }
+          val futureGotIndex = if (skipCache)
+            getWithoutCache
+          else
+            getFromCacheOrElse(cache, url, cacheHit = true) { getWithoutCache }
 
-    override def postStop = {
-        client.stop
-        cache.stop
-    }
+          futureGotIndex pipeTo sender
+      }
+  }
+
 }
 
 object ClientActor {
-    private def getFromCacheOrElse(cache: ActorRef, url: String, cacheHit: Boolean)(fallback: => Future[GotIndex]): Future[GotIndex] = {
-        cache ? FetchCachedIndex(url) flatMap {
-            case CachedIndexFetched(Some(index)) =>
-                new AlreadyCompletedFuture(Right(GotIndex(url, Some(index), cacheHit)))
-            case CachedIndexFetched(None) =>
-                fallback
-        }
+  private def getFromCacheOrElse(cache: ActorRef, url: String, cacheHit: Boolean)(fallback: => Future[GotIndex])(implicit executor: ExecutionContext): Future[GotIndex] = {
+    implicit val timeout = Timeout(30 seconds)
+    cache ? FetchCachedIndex(url) flatMap {
+      case CachedIndexFetched(Some(index)) =>
+        Promise.successful(GotIndex(url, Some(index), cacheHit))
+      case CachedIndexFetched(None) =>
+        fallback
     }
+  }
 
-    private def getFromWorker(client: ActorRef, url: String): Future[Unit] = {
-        client ? SpiderAndCache(url) map {
-            case SpideredAndCached(returnedUrl) =>
-                Unit
-        }
+  private def getFromWorker(client: ActorRef, url: String)(implicit executor: ExecutionContext): Future[Unit] = {
+    implicit val timeout = Timeout(30 seconds)
+    client ? SpiderAndCache(url) map {
+      case SpideredAndCached(returnedUrl) =>
+        Unit
     }
+  }
 }
